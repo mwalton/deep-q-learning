@@ -3,6 +3,7 @@ from tqdm import tqdm
 import numpy as np
 log = logging.getLogger(__name__)
 
+
 class Agent:
     def __init__(self, environment, replay_memory, q_net=None,
                  display_screen=False, init_epsilon=1, end_epsilon=.1,
@@ -44,10 +45,10 @@ class Agent:
             getCurrentState() returns minibatch where first item
             is the current state
             '''
-            #qvalues = self.net.predict(state)
-            #assert len(qvalues[0]) == self.num_actions
+            qvalues = self.net.predict(state)
+            assert len(qvalues[0]) == self.num_actions
             # choose highest Q-value of first state
-            action = 0#np.argmax(qvalues[0])
+            action = np.argmax(qvalues[0])
 
         # render the display
 
@@ -71,7 +72,6 @@ class Agent:
 
         return terminal
 
-
     def play_random(self, num_steps):
         for i in tqdm(xrange(num_steps)):
             # let pr of random action epsilon = 1
@@ -86,19 +86,18 @@ class Agent:
             if t % self.train_frequency == 0:
                 # train for train_repeat times
                 for i in xrange(self.train_repeat):
-                  # sample minibatch
-                  minibatch = self.mem.getMinibatch()
-                  # train the network
-                  #self.net.train(minibatch, epoch)
+                    # sample minibatch
+                    minibatch = self.mem.getMinibatch()
+                    # train the network
+                    self.net.train(minibatch)
 
     def test(self, num_steps):
         # just make sure there is history_length screens to form a state
         self._restartRandom()
         # play given number of steps
         for t in tqdm(xrange(num_steps)):
-          # perform game step
-          self.step(self.test_epsilon)
-
+            # perform game step
+            self.step(self.test_epsilon)
 
     def play(self, num_games):
         self._restartRandom()

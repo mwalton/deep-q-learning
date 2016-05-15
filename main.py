@@ -8,21 +8,23 @@ from deep_qlean.q_networks import ConvNet, ConvAutoEncoder
 import logging, signal, sys
 logging.basicConfig(format='%(asctime)s %(message)s')
 
-'''
-Set a callback for attempting to close display
-on SIGINT. Arcade Learning Environments / OpenAI Gym windows do
-not close automatically after program terminates or keyboard interrupt
-'''
+
 def close_gui(signal, frame):
-  if env and args.display_screen:
-    env.gym.render(close=True)
-  sys.exit(0)
+    '''Set a callback for attempting to close display
+    on SIGINT. Arcade Learning Environments / OpenAI Gym windows do
+    not close automatically after program terminates or keyboard interrupt
+    '''
+    if env and args.display_screen:
+        env.gym.render(close=True)
+    sys.exit(0)
 
 signal.signal(signal.SIGINT, close_gui)
 
+
 def str2bool(v):
-  '''map common argument semantics to bool'''
-  return v.lower() in ("yes", "true", "t", "1")
+    '''map common argument semantics to bool'''
+    return v.lower() in ("yes", "true", "t", "1")
+
 
 def network_factory(type, **kwargs):
     if type == 'conv_net':
@@ -33,7 +35,6 @@ def network_factory(type, **kwargs):
         raise TypeError, "Not a valid Q-Network Topology"
 
 # Parse input arguments
-
 parser = argparse.ArgumentParser()
 
 envarg = parser.add_argument_group('Environment')
@@ -86,11 +87,9 @@ log.setLevel(args.log_level)
 log.handlers.pop()
 
 if args.random_seed:
-  random.seed(args.random_seed)
+    random.seed(args.random_seed)
 
-'''
-Instantiate agent and environment.
-'''
+# Instantiate agent and environment.
 env = Gym(args.env_id, args.screen_width, args.screen_height)
 mem = ReplayMemory(args.replay_size, args)
 q_net = network_factory(args, shape=(1, 1))
@@ -102,32 +101,32 @@ agent = Agent(env, mem, q_net, display_screen=args.display_screen,
 
 # Load weights from trained network
 if args.load_weights:
-  # TODO
-  log.info("Loading weights from %s" % args.load_weights)
-  raise NotImplementedError
+    # TODO
+    log.info("Loading weights from %s" % args.load_weights)
+    raise NotImplementedError
 
 
 # Play games without train / test
 if args.play_games:
-  log.info("Playing %d games" % args.play_games)
-  agent.play(args.play_games)
-  sys.exit(0)
+    log.info("Playing %d games" % args.play_games)
+    agent.play(args.play_games)
+    sys.exit(0)
 
 
 # Populate the agent's replay memory with random steps before learning
 if args.random_steps:
-  log.info("Populating replay mem with %d random moves" % args.random_steps)
-  agent.play_random(args.random_steps)
+    log.info("Populating replay mem with %d random moves" % args.random_steps)
+    agent.play_random(args.random_steps)
 
 
 # Train test loop over epochs
 for epoch in xrange(args.epochs):
-  log.info("Epoch #%d / %d" % ((epoch + 1), args.epochs))
+    log.info("Epoch #%d / %d" % ((epoch + 1), args.epochs))
 
-  if args.train_steps:
-    log.info("Training for %d steps" % args.train_steps)
-    agent.train(args.train_steps)
-  if args.test_steps:
-    log.info("Testing for %d steps" % args.test_steps)
-    agent.test(args.test_steps)
+    if args.train_steps:
+        log.info("Training for %d steps" % args.train_steps)
+        agent.train(args.train_steps)
+    if args.test_steps:
+        log.info("Testing for %d steps" % args.test_steps)
+        agent.test(args.test_steps)
 
