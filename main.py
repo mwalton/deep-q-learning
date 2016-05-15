@@ -74,7 +74,7 @@ mainarg.add_argument("--test_steps", type=int, default=125000, help="How many te
 mainarg.add_argument("--epochs", type=int, default=200, help="How many epochs to run.")
 mainarg.add_argument("--play_games", type=int, default=0, help="How many games to play, suppresses training and testing.")
 mainarg.add_argument("--load_weights", help="Load network from file.")
-mainarg.add_argument("--save_weights_prefix", help="Save network to given file. Epoch and extension will be appended.")
+mainarg.add_argument("--save_weights_prefix", help="Save network to given file. Network topology, epoch and extension will be appended.")
 mainarg.add_argument("--csv_file", help="Write training progress to this file.")
 
 comarg = parser.add_argument_group('Common')
@@ -92,7 +92,7 @@ if args.random_seed:
 # Instantiate agent and environment.
 env = Gym(args.env_id, args.screen_width, args.screen_height)
 mem = ReplayMemory(args.replay_size, args)
-q_net = network_factory(args, shape=(1, 1))
+q_net = network_factory(args.qnet_type, shape=(1, 1))
 agent = Agent(env, mem, q_net, display_screen=args.display_screen,
               init_epsilon=args.init_epsilon, end_epsilon=args.end_epsilon,
               epsilon_decay_steps=args.epsilon_decay_steps,
@@ -101,10 +101,8 @@ agent = Agent(env, mem, q_net, display_screen=args.display_screen,
 
 # Load weights from trained network
 if args.load_weights:
-    # TODO
     log.info("Loading weights from %s" % args.load_weights)
-    raise NotImplementedError
-
+    q_net.load_weights(args.load_weights)
 
 # Play games without train / test
 if args.play_games:
@@ -112,12 +110,10 @@ if args.play_games:
     agent.play(args.play_games)
     sys.exit(0)
 
-
 # Populate the agent's replay memory with random steps before learning
 if args.random_steps:
     log.info("Populating replay mem with %d random moves" % args.random_steps)
     agent.play_random(args.random_steps)
-
 
 # Train test loop over epochs
 for epoch in xrange(args.epochs):
@@ -126,6 +122,12 @@ for epoch in xrange(args.epochs):
     if args.train_steps:
         log.info("Training for %d steps" % args.train_steps)
         agent.train(args.train_steps)
+
+        if args.save_weights_prefix:
+            filename = args.save_weights_prefix + "%s_%d.pkl" % (args.qnet_type, (epoch + 1))
+            log.info("Saving weights to %s" % filename)
+            q_net.save_weights(filename)
+
     if args.test_steps:
         log.info("Testing for %d steps" % args.test_steps)
         agent.test(args.test_steps)

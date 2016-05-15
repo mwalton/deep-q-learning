@@ -28,6 +28,17 @@ class Agent:
         # TODO: perform random number of dummy actions (may not be a good idea)
 
     def _epsilon(self, t):
+        '''
+        Epsilon decay schedule that gradulally reduces stochasticity
+        of action selection.
+        '''
+        '''TODO: Try softmax action selection
+        The network's output is an estimation of the q value
+        for each possible action selection, could select
+        actions from a probability distribution which is proportional
+        to the network's estimated Q
+        http://artint.info/html/ArtInt_266.html
+        '''
         # calculate decaying exploration rate
         if t < self.epsilon_decay_steps:
             return self.init_epsilon - t * (self.init_epsilon - self.end_epsilon) / self.epsilon_decay_steps
@@ -46,9 +57,9 @@ class Agent:
             is the current state
             '''
             qvalues = self.net.predict(state)
-            assert len(qvalues[0]) == self.num_actions
+            assert len(qvalues) == self.num_actions
             # choose highest Q-value of first state
-            action = np.argmax(qvalues[0])
+            action = np.argmax(qvalues)
 
         # render the display
 

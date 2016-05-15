@@ -9,16 +9,16 @@ class QNetwork:
     def _createLayers(self):
         raise NotImplementedError
 
-    def train(self):
+    def train(self, minibatch):
         raise NotImplementedError
 
-    def predict(self):
+    def predict(self, state):
         raise NotImplementedError
 
-    def load_weigths(self):
+    def load_weight(self, filename):
         raise NotImplementedError
 
-    def save_weights(self):
+    def save_weights(self, filename):
         raise NotImplementedError
 
 
@@ -35,11 +35,11 @@ class ConvNet(QNetwork):
     def predict(self, state):
         return np.random.rand(6)
 
-    def load_weigths(self):
-        raise NotImplementedError
+    def load_weights(self, filename):
+        pass
 
-    def save_weights(self):
-        raise NotImplementedError
+    def save_weights(self, filename):
+        pass
 
 
 class ConvAutoEncoder(QNetwork):
@@ -55,7 +55,7 @@ class ConvAutoEncoder(QNetwork):
     def predict(self):
         raise NotImplementedError
 
-    def load_weigths(self):
+    def load_weights(self):
         raise NotImplementedError
 
     def save_weights(self):
