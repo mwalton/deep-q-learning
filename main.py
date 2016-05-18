@@ -27,9 +27,9 @@ def str2bool(v):
 
 
 def network_factory(type, **kwargs):
-    if type == 'conv_net':
+    if type == 'cnn':
         return ConvNet(kwargs)
-    elif type == 'conv_autoencoder':
+    elif type == 'cae':
         return ConvAutoEncoder(kwargs)
     else:
         raise TypeError, "Not a valid Q-Network Topology"
@@ -50,7 +50,7 @@ memarg.add_argument("--min_reward", type=float, default=-1, help="Minimum reward
 memarg.add_argument("--max_reward", type=float, default=1, help="Maximum reward.")
 
 netarg = parser.add_argument_group('Deep Q-learning network')
-netarg.add_argument("--qnet_type", choices=['conv_net','conv_autoencoder'], default='conv_net', help="Q-Network topology")
+netarg.add_argument("--qnet_type", choices=['cnn','cae'], default='cnn', help="Q-Network topology")
 netarg.add_argument("--learning_rate", type=float, default=0.00025, help="Learning rate.")
 netarg.add_argument("--gamma", type=float, default=0.99, help="Discount rate for future rewards.")
 netarg.add_argument("--batch_size", type=int, default=32, help="Batch size for neural network.")
