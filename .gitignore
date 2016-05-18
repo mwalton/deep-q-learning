@@ -1,3 +1,8 @@
+# ignore datasets
+*.gz
+# ignore tensorboard summary files
+*.local
+
 *.class
 
 # Mobile Tools for Java (J2ME)
