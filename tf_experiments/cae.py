@@ -157,7 +157,6 @@ if __name__=='__main__':
     # create a saver to export model params
     saver = tf.train.Saver(tf.all_variables())
 
-
     # build the summary operation
     summary_op = tf.merge_all_summaries()
 
@@ -177,6 +176,8 @@ if __name__=='__main__':
                 saver.restore(sess, ckpt.model_checkpoint_path)
 
         if FLAGS.train:
+            logging.info('Training for %d epoch(s) [%d minibatches, batch size = %d]'
+                         % (FLAGS.num_epochs, total_steps, FLAGS.batch_size))
             train_writer = tf.train.SummaryWriter(FLAGS.logdir + '/train', sess.graph)
             test_writer = tf.train.SummaryWriter(FLAGS.logdir + '/test')
             sess.run(init_op)
@@ -197,7 +198,8 @@ if __name__=='__main__':
 
         if FLAGS.test:
             acc = sess.run(accuracy_op, feed_dict={x: mnist.test.images, y: mnist.test.labels})
-            logging.info('Accuracy: %1.4f' % acc)
+            logging.info('Evaluating model accuracy on %d test examples' % mnist.test.images.shape[0])
+            print('Accuracy: %1.4f' % acc)
 
 
 
