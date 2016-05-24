@@ -9,6 +9,7 @@ logging.basicConfig(level=logging.INFO)
 def get_flags(args):
     flags = tf.app.flags
     FLAGS = flags.FLAGS
+    flags.DEFINE_string('model_type', 'cnn', 'Model topology spec, either cnn or cae')
     flags.DEFINE_integer('batch_size', 100, 'Number of examples per batch')
     flags.DEFINE_integer('image_size', 28, 'Size of n x n images, should be 28 for MNIST')
     flags.DEFINE_integer('num_classes', 10, 'Number of labels or classes, should be 10 for MNIST')
@@ -56,6 +57,18 @@ def conv2d(name, input, kernel_shape, padding='SAME'):
 
     return relu
 
+def deconv2d(name, input, kernel_shape, output_shape, padding='SAME'):
+    with tf.variable_scope(name) as scope:
+        kernel = weight_variable(kernel_shape, name='weights')
+        bias = bias_variable([kernel_shape[-1]], name='bias')
+        deconv = tf.nn.conv2d_transpose(input, kernel, output_shape,
+                                        strides=[1,1,1,1], padding=padding)
+        relu = tf.nn.relu(tf.nn.bias_add(deconv, bias), name=scope.name)
+        activation_summary(relu)
+
+    return relu
+
+
 # helper function for initializing max pooling layers
 def max_pool(name, input, padding='SAME'):
     with tf.variable_scope(name) as scope:
@@ -63,6 +76,30 @@ def max_pool(name, input, padding='SAME'):
                               padding=padding, name=scope.name)
 
     return pool
+
+def max_pool_argmax(name, input, padding='SAME'):
+    maxpool, argmax = tf.nn.max_pool_with_argmax(input,
+                                                 [1,2,2,1],
+                                                 [1,2,2,1],
+                                                 padding=padding,
+                                                 name=name)
+    return (maxpool, argmax)
+
+def argmax_unpool(name, maxpool, argmax, padding='SAME'):
+    with tf.variable_scope(name) as scope:
+        max_shape = [s.value for s in maxpool.get_shape()]
+
+        maxflat = tf.reshape(maxpool, [-1, max_shape[1] * max_shape[2] * max_shape[3]])
+        argflat = flatten('argflat',argmax)
+
+        # unpooled shape will be 4 * pooled (for 2x2)
+        flat_shape = 4 * maxflat.get_shape()[1].value
+        unpool = tf.Variable(tf.zeros([flat_shape,]))
+        unpool.initializer.run()
+
+        unpool = tf.scatter_update(unpool, argflat, maxflat)
+        unpool_shape = [-1, 2 * max_shape[1], 2 * max_shape[2], max_shape[3]]
+        return tf.reshape(unpool, unpool_shape)
 
 # fully input
 def flatten(name, input):
@@ -95,6 +132,13 @@ def cross_entropy(name, y_target, y_pred):
         tf.scalar_summary('cross entropy', xentropy)
 
     return xentropy
+
+def mean_squared_err(name, x, x_):
+    with tf.variable_scope(name) as scope:
+        meansq = tf.reduce_mean(tf.square(x_ - x))
+        tf.scalar_summary('mean square error', meansq)
+
+    return meansq
 
 def accuracy(name, y_target, y_pred):
     correct_prediction = tf.equal(tf.argmax(y_pred,1), tf.argmax(y_target,1))
@@ -139,19 +183,32 @@ if __name__=='__main__':
     tf.image_summary('input', x_image, max_images=100)
 
     # convolutional and max pooling layers
+    shape0 = [s.value for s in x_image.get_shape()]
     conv = conv2d('conv1', x_image, [5,5,FLAGS.num_channels,32])
-    pool = max_pool('max_pool1', conv)
+    pool, argmax0 = max_pool_argmax('max_pool1', conv)
+    shape1 = [s.value for s in pool.get_shape()]
     conv = conv2d('conv2', pool, [5,5,32,64])
-    pool = max_pool('max_pool2', conv)
+    pool, argmax1 = max_pool_argmax('max_pool2', conv)
 
-    # fully connected layer
-    flat = flatten('flatten', pool)
-    hidden = fully_connected('hidden', flat, 512)
-    y_ = softmax('softmax', hidden, FLAGS.num_classes)
+    if FLAGS.model_type == 'cnn':
+        # fully connected layer
+        flat = flatten('flatten', pool)
+        hidden = fully_connected('hidden', flat, 512)
+        y_ = softmax('softmax', hidden, FLAGS.num_classes)
 
-    # train using cross entropy
-    loss = cross_entropy('loss', y, y_)
-    accuracy_op = accuracy('accuracy', y, y_)
+        # train using cross entropy
+        loss = cross_entropy('loss', y, y_)
+        accuracy_op = accuracy('accuracy', y, y_)
+
+    elif FLAGS.model_type == 'cae':
+        unpool = argmax_unpool('unpool1', pool, argmax1)
+        convT = deconv2d('deconv1', unpool, [5,5,32,64], shape1)
+        unpool = argmax_unpool('unpool2', convT, argmax0)
+        convT = deconv2d('deconv2', unpool, [5,5,FLAGS.num_channels,32], shape0)
+
+        loss = mean_squared_err('loss', x_image, convT)
+    else:
+        raise ValueError, "Invalid model topology, options are \'cae\',\'cnn\'"
     train_op = train(loss)
 
     # create a saver to export model params
