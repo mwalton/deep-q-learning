@@ -60,7 +60,7 @@ def conv2d(name, input, kernel_shape, padding='SAME'):
 def deconv2d(name, input, kernel_shape, output_shape, padding='SAME'):
     with tf.variable_scope(name) as scope:
         kernel = weight_variable(kernel_shape, name='weights')
-        bias = bias_variable([kernel_shape[-1]], name='bias')
+        bias = bias_variable([kernel_shape[-2]], name='bias')
         deconv = tf.nn.conv2d_transpose(input, kernel, output_shape,
                                         strides=[1,1,1,1], padding=padding)
         relu = tf.nn.relu(tf.nn.bias_add(deconv, bias), name=scope.name)
@@ -183,9 +183,11 @@ if __name__=='__main__':
 
     # convolutional and max pooling layers
     shape0 = [s.value for s in x_image.get_shape()]
+    shape0 = [1] + shape0[1:]
     conv = conv2d('conv1', x_image, [5,5,FLAGS.num_channels,32])
     pool, argmax0 = max_pool_argmax('max_pool1', conv)
     shape1 = [s.value for s in pool.get_shape()]
+    shape1 = [1] + shape1[1:]
     conv = conv2d('conv2', pool, [5,5,32,64])
     pool, argmax1 = max_pool_argmax('max_pool2', conv)
 
