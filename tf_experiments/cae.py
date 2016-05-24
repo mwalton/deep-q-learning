@@ -95,7 +95,6 @@ def argmax_unpool(name, maxpool, argmax, padding='SAME'):
         # unpooled shape will be 4 * pooled (for 2x2)
         flat_shape = 4 * maxflat.get_shape()[1].value
         unpool = tf.Variable(tf.zeros([flat_shape,]))
-        unpool.initializer.run()
 
         unpool = tf.scatter_update(unpool, argflat, maxflat)
         unpool_shape = [-1, 2 * max_shape[1], 2 * max_shape[2], max_shape[3]]
