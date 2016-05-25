@@ -218,7 +218,7 @@ if __name__=='__main__':
 
     # reshape the input into images
     x_image = tf.reshape(x, [-1,FLAGS.image_size, FLAGS.image_size, FLAGS.num_channels])
-    tf.image_summary('input', x_image, max_images=100)
+    #tf.image_summary('input', x_image, max_images=100)
 
     # convolutional and max pooling layers
     shape0 = [s.value for s in x_image.get_shape()]
@@ -245,6 +245,7 @@ if __name__=='__main__':
         convT = deconv2d('deconv1', unpool, [5,5,32,64], shape1)
         unpool = argmax_unpool('unpool2', convT, argmax0, FLAGS.batch_size)
         convT = deconv2d('deconv2', unpool, [5,5,FLAGS.num_channels,32], shape0)
+	tf.image_summary('input', convT, max_images=100)
 
         loss = mean_squared_err('loss', x_image, convT)
     else:
