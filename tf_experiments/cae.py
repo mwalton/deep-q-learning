@@ -99,13 +99,17 @@ def max_pool_argmax(name, input, padding='SAME'):
 
 def argmax_unpool(name, maxpool, argmax, padding='SAME'):
     with tf.variable_scope(name) as scope:
-        max_shape = [s.value for s in maxpool.get_shape()]
-	upsample_shape = [2 * max_shape[1], 2 * max_shape[2]]
-	upsample = tf.image.resize_nearest_neighbor(maxpool, size=upsample_shape)
-	mask = tf.cast(tf.ones_like(upsample), tf.bool)
-	unpool = tf.select(mask, upsample, upsample)
     return unpool
 '''
+
+NEAREST NEIGHBOR UPSAMPLE
+max_shape = [s.value for s in maxpool.get_shape()]
+upsample_shape = [2 * max_shape[1], 2 * max_shape[2]]
+upsample = tf.image.resize_nearest_neighbor(maxpool, size=upsample_shape)
+mask = tf.cast(tf.ones_like(upsample), tf.bool)
+unpool = tf.select(mask, upsample, upsample)
+
+NO GRAD DEFINED FOR SCATTER_UPDATE
 max_shape = [s.value for s in maxpool.get_shape()]
 
 maxflat = tf.reshape(maxpool, [-1, max_shape[1] * max_shape[2] * max_shape[3]])
