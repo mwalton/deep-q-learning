@@ -8,7 +8,7 @@ logging.basicConfig(level=logging.INFO)
 from tensorflow.python.framework import ops
 from tensorflow.python.ops import gen_nn_ops
 @ops.RegisterGradient("MaxPoolWithArgmax")
-def _MaxPoolWithArgmaxGrad(op,op2, grad):
+def _MaxPoolWithArgmaxGrad(op, grad, arg):
   return gen_nn_ops._max_pool_grad(op.inputs[0],
                                    op.outputs[0],
                                    grad,
@@ -202,14 +202,14 @@ if __name__=='__main__':
     tf.image_summary('input', x_image, max_images=100)
 
     # convolutional and max pooling layers
-    #shape0 = [s.value for s in x_image.get_shape()]
-    #shape0 = [1] + shape0[1:]
+    shape0 = [s.value for s in x_image.get_shape()]
+    shape0 = [FLAGS.batch_size] + shape0[1:]
     conv = conv2d('conv1', x_image, [5,5,FLAGS.num_channels,32])
-    pool= max_pool('max_pool1', conv)
-    #shape1 = [s.value for s in pool.get_shape()]
-    #shape1 = [1] + shape1[1:]
+    pool, argmax0 = max_pool_argmax('max_pool1', conv)
+    shape1 = [s.value for s in pool.get_shape()]
+    shape1 = [FLAGS.batch_size] + shape1[1:]
     conv = conv2d('conv2', pool, [5,5,32,64])
-    pool = max_pool('max_pool2', conv)
+    pool, argmax1 = max_pool_argmax('max_pool2', conv)
 
     if FLAGS.model_type == 'cnn':
         # fully connected layer
@@ -274,7 +274,7 @@ if __name__=='__main__':
                     checkpoint_path = os.path.join(FLAGS.chkdir, 'model.ckpt')
                     saver.save(sess, checkpoint_path, global_step=step)
 
-        if FLAGS.test:
+        if FLAGS.test and accuracy_op != None:
             acc = sess.run(accuracy_op, feed_dict={x: mnist.test.images, y: mnist.test.labels})
             logging.info('Evaluating model accuracy on %d test examples' % mnist.test.images.shape[0])
             print('Accuracy: %1.4f' % acc)
