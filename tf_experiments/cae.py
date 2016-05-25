@@ -97,8 +97,21 @@ def max_pool_argmax(name, input, padding='SAME'):
                                                  name=name)
     return (maxpool, argmax)
 
-def argmax_unpool(name, maxpool, argmax, padding='SAME'):
+def argmax_unpool(name, maxpool, argmax, batch_size, padding='SAME'):
     with tf.variable_scope(name) as scope:
+	max_shape = [s.value for s in maxpool.get_shape()]
+
+	flat_n = max_shape[1] * max_shape[2] * max_shape[3]
+	maxflat = tf.reshape(maxpool, [-1, flat_n])
+	argflat = tf.reshape(argmax, [-1, flat_n])
+	for i in max_shape : print max_shape 
+	print [flat_n * 4]
+
+	sparse = tf.sparse_to_dense(argflat, [flat_n * 4 * batch_size], maxflat, validate_indices=False)
+	unpool_shape = [-1, 2 * max_shape[1], 2 * max_shape[2], max_shape[3]]
+	print unpool_shape
+	unpool = tf.reshape(sparse, unpool_shape)
+	print 'done'
     return unpool
 '''
 
@@ -226,9 +239,9 @@ if __name__=='__main__':
         accuracy_op = accuracy('accuracy', y, y_)
 
     elif FLAGS.model_type == 'cae':
-        unpool = argmax_unpool('unpool1', pool, argmax1)
+        unpool = argmax_unpool('unpool1', pool, argmax1, FLAGS.batch_size)
         convT = deconv2d('deconv1', unpool, [5,5,32,64], shape1)
-        unpool = argmax_unpool('unpool2', convT, argmax0)
+        unpool = argmax_unpool('unpool2', convT, argmax0, FLAGS.batch_size)
         convT = deconv2d('deconv2', unpool, [5,5,FLAGS.num_channels,32], shape0)
 
         loss = mean_squared_err('loss', x_image, convT)
