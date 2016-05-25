@@ -102,15 +102,17 @@ def argmax_unpool(name, maxpool, argmax, batch_size, padding='SAME'):
 	max_shape = [s.value for s in maxpool.get_shape()]
 
 	flat_n = max_shape[1] * max_shape[2] * max_shape[3]
-	maxflat = tf.reshape(maxpool, [-1, flat_n])
-	argflat = tf.reshape(argmax, [-1, flat_n])
+	maxflat = tf.reshape(maxpool, [batch_size * flat_n])
+	argflat = tf.reshape(argmax, [batch_size * flat_n, -1])
 	for i in max_shape : print max_shape 
 	print [flat_n * 4]
 
-	sparse = tf.sparse_to_dense(argflat, [flat_n * 4 * batch_size], maxflat, validate_indices=False)
+	sparse = tf.SparseTensor(argflat, maxflat, shape=[flat_n * 4 * batch_size])
+	dense = tf.sparse_tensor_to_dense(sparse, validate_indices=False)
+	#sparse = tf.sparse_to_dense(argflat, [batch_size,flat_n * 4], maxflat, validate_indices=False)
 	unpool_shape = [-1, 2 * max_shape[1], 2 * max_shape[2], max_shape[3]]
 	print unpool_shape
-	unpool = tf.reshape(sparse, unpool_shape)
+	unpool = tf.reshape(dense, unpool_shape)
 	print 'done'
     return unpool
 '''
