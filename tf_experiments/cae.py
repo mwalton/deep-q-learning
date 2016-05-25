@@ -5,6 +5,18 @@ from tqdm import tqdm
 import logging
 logging.basicConfig(level=logging.INFO)
 
+from tensorflow.python.framework import ops
+from tensorflow.python.ops import gen_nn_ops
+@ops.RegisterGradient("MaxPoolWithArgmax")
+def _MaxPoolWithArgmaxGrad(op,op2, grad):
+  return gen_nn_ops._max_pool_grad(op.inputs[0],
+                                   op.outputs[0],
+                                   grad,
+                                   op.get_attr("ksize"),
+                                   op.get_attr("strides"),
+                                   padding=op.get_attr("padding"),
+                                   data_format='NHWC')
+
 # int and get tf flags dict; set from command line may be a good idea
 def get_flags(args):
     flags = tf.app.flags
@@ -88,17 +100,25 @@ def max_pool_argmax(name, input, padding='SAME'):
 def argmax_unpool(name, maxpool, argmax, padding='SAME'):
     with tf.variable_scope(name) as scope:
         max_shape = [s.value for s in maxpool.get_shape()]
+	upsample_shape = [2 * max_shape[1], 2 * max_shape[2]]
+	upsample = tf.image.resize_nearest_neighbor(maxpool, size=upsample_shape)
+	mask = tf.cast(tf.ones_like(upsample), tf.bool)
+	unpool = tf.select(mask, upsample, upsample)
+    return unpool
+'''
+max_shape = [s.value for s in maxpool.get_shape()]
 
-        maxflat = tf.reshape(maxpool, [-1, max_shape[1] * max_shape[2] * max_shape[3]])
-        argflat = flatten('argflat',argmax)
+maxflat = tf.reshape(maxpool, [-1, max_shape[1] * max_shape[2] * max_shape[3]])
+argflat = flatten('argflat',argmax)
 
-        # unpooled shape will be 4 * pooled (for 2x2)
-        flat_shape = 4 * maxflat.get_shape()[1].value
-        unpool = tf.Variable(tf.zeros([flat_shape,]))
+# unpooled shape will be 4 * pooled (for 2x2)
+flat_shape = 4 * maxflat.get_shape()[1].value
+unpool = tf.Variable(tf.zeros([flat_shape,]))
 
-        unpool = tf.scatter_update(unpool, argflat, maxflat)
-        unpool_shape = [-1, 2 * max_shape[1], 2 * max_shape[2], max_shape[3]]
-        return tf.reshape(unpool, unpool_shape)
+unpool = tf.scatter_update(unpool, argflat, maxflat)
+unpool_shape = [-1, 2 * max_shape[1], 2 * max_shape[2], max_shape[3]]
+return tf.reshape(unpool, unpool_shape)
+'''
 
 # fully input
 def flatten(name, input):
@@ -182,14 +202,14 @@ if __name__=='__main__':
     tf.image_summary('input', x_image, max_images=100)
 
     # convolutional and max pooling layers
-    shape0 = [s.value for s in x_image.get_shape()]
-    shape0 = [1] + shape0[1:]
+    #shape0 = [s.value for s in x_image.get_shape()]
+    #shape0 = [1] + shape0[1:]
     conv = conv2d('conv1', x_image, [5,5,FLAGS.num_channels,32])
-    pool, argmax0 = max_pool_argmax('max_pool1', conv)
-    shape1 = [s.value for s in pool.get_shape()]
-    shape1 = [1] + shape1[1:]
+    pool= max_pool('max_pool1', conv)
+    #shape1 = [s.value for s in pool.get_shape()]
+    #shape1 = [1] + shape1[1:]
     conv = conv2d('conv2', pool, [5,5,32,64])
-    pool, argmax1 = max_pool_argmax('max_pool2', conv)
+    pool = max_pool('max_pool2', conv)
 
     if FLAGS.model_type == 'cnn':
         # fully connected layer
