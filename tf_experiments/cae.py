@@ -99,21 +99,21 @@ def max_pool_argmax(name, input, padding='SAME'):
 
 def argmax_unpool(name, maxpool, argmax, batch_size, padding='SAME'):
     with tf.variable_scope(name) as scope:
-	max_shape = [s.value for s in maxpool.get_shape()]
+        max_shape = [s.value for s in maxpool.get_shape()]
 
-	flat_n = max_shape[1] * max_shape[2] * max_shape[3]
-	maxflat = tf.reshape(maxpool, [batch_size * flat_n])
-	argflat = tf.reshape(argmax, [batch_size * flat_n, -1])
-	for i in max_shape : print max_shape 
-	print [flat_n * 4]
+        flat_n = max_shape[1] * max_shape[2] * max_shape[3]
+        maxflat = tf.reshape(maxpool, [batch_size * flat_n])
+        argflat = tf.reshape(argmax, [batch_size * flat_n, -1])
+        for i in max_shape : print max_shape
+        print [flat_n * 4]
 
-	sparse = tf.SparseTensor(argflat, maxflat, shape=[flat_n * 4 * batch_size])
-	dense = tf.sparse_tensor_to_dense(sparse, validate_indices=False)
-	#sparse = tf.sparse_to_dense(argflat, [batch_size,flat_n * 4], maxflat, validate_indices=False)
-	unpool_shape = [-1, 2 * max_shape[1], 2 * max_shape[2], max_shape[3]]
-	print unpool_shape
-	unpool = tf.reshape(dense, unpool_shape)
-	print 'done'
+        sparse = tf.SparseTensor(argflat, maxflat, shape=[flat_n * 4 * batch_size])
+        dense = tf.sparse_tensor_to_dense(sparse, validate_indices=False)
+        #sparse = tf.sparse_to_dense(argflat, [batch_size,flat_n * 4], maxflat, validate_indices=False)
+        unpool_shape = [-1, 2 * max_shape[1], 2 * max_shape[2], max_shape[3]]
+        print unpool_shape
+        unpool = tf.reshape(dense, unpool_shape)
+        print 'done'
     return unpool
 '''
 
@@ -218,20 +218,15 @@ if __name__=='__main__':
 
     # reshape the input into images
     x_image = tf.reshape(x, [-1,FLAGS.image_size, FLAGS.image_size, FLAGS.num_channels])
-    #tf.image_summary('input', x_image, max_images=100)
+    tf.image_summary('input', x_image, max_images=100)
 
-    # convolutional and max pooling layers
-    shape0 = [s.value for s in x_image.get_shape()]
-    shape0 = [FLAGS.batch_size] + shape0[1:]
-    conv = conv2d('conv1', x_image, [5,5,FLAGS.num_channels,32])
-    pool, argmax0 = max_pool_argmax('max_pool1', conv)
-    shape1 = [s.value for s in pool.get_shape()]
-    shape1 = [FLAGS.batch_size] + shape1[1:]
-    conv = conv2d('conv2', pool, [5,5,32,64])
-    pool, argmax1 = max_pool_argmax('max_pool2', conv)
 
     if FLAGS.model_type == 'cnn':
         # fully connected layer
+        conv = conv2d('conv1', x_image, [5,5,FLAGS.num_channels,32])
+        pool = max_pool('max_pool1', conv)
+        conv = conv2d('conv2', pool, [5,5,32,64])
+        pool = max_pool('max_pool2', conv)
         flat = flatten('flatten', pool)
         hidden = fully_connected('hidden', flat, 512)
         y_ = softmax('softmax', hidden, FLAGS.num_classes)
@@ -241,15 +236,26 @@ if __name__=='__main__':
         accuracy_op = accuracy('accuracy', y, y_)
 
     elif FLAGS.model_type == 'cae':
+        # convolutional and max pooling layers
+        shape0 = [s.value for s in x_image.get_shape()]
+        shape0 = [FLAGS.batch_size] + shape0[1:]
+        conv = conv2d('conv1', x_image, [5,5,FLAGS.num_channels,32])
+        pool, argmax0 = max_pool_argmax('max_pool1', conv)
+        shape1 = [s.value for s in pool.get_shape()]
+        shape1 = [FLAGS.batch_size] + shape1[1:]
+        conv = conv2d('conv2', pool, [5,5,32,64])
+        pool, argmax1 = max_pool_argmax('max_pool2', conv)
         unpool = argmax_unpool('unpool1', pool, argmax1, FLAGS.batch_size)
         convT = deconv2d('deconv1', unpool, [5,5,32,64], shape1)
         unpool = argmax_unpool('unpool2', convT, argmax0, FLAGS.batch_size)
         convT = deconv2d('deconv2', unpool, [5,5,FLAGS.num_channels,32], shape0)
-	tf.image_summary('input', convT, max_images=100)
+
+        tf.image_summary('input', convT, max_images=100)
 
         loss = mean_squared_err('loss', x_image, convT)
     else:
         raise ValueError, "Invalid model topology, options are \'cae\',\'cnn\'"
+
     train_op = train(loss)
 
     # create a saver to export model params
@@ -294,10 +300,16 @@ if __name__=='__main__':
                     checkpoint_path = os.path.join(FLAGS.chkdir, 'model.ckpt')
                     saver.save(sess, checkpoint_path, global_step=step)
 
-        if FLAGS.test and accuracy_op != None:
-            acc = sess.run(accuracy_op, feed_dict={x: mnist.test.images, y: mnist.test.labels})
-            logging.info('Evaluating model accuracy on %d test examples' % mnist.test.images.shape[0])
-            print('Accuracy: %1.4f' % acc)
+        if FLAGS.test:
+            if FLAGS.model_type:
+                acc = sess.run(accuracy_op, feed_dict={x: mnist.test.images, y: mnist.test.labels})
+                logging.info('Evaluating model accuracy on %d test examples' % mnist.test.images.shape[0])
+                print('Accuracy: %1.4f' % acc)
+            else:
+                mse = sess.run(loss, feed_dict={x: mnist.test.images, y: mnist.test.labels})
+                logging.info('Evaluating model accuracy on %d test examples' % mnist.test.images.shape[0])
+                print("MSE: %1.4f" % mse)
+
 
 
 
