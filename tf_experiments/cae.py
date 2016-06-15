@@ -17,6 +17,8 @@ def _MaxPoolWithArgmaxGrad(op, grad, unused_argmax):
                                    padding=op.get_attr("padding"),
                                    data_format='NHWC')
 
+LOSSES_COLLECTION = '_losses'
+
 # int and get tf flags dict; set from command line may be a good idea
 def get_flags(args):
     flags = tf.app.flags
@@ -48,6 +50,42 @@ def activation_summary(x):
     tf.histogram_summary(x.op.name + '/activations', x)
     tf.scalar_summary(x.op.name + '/sparsity', tf.nn.zero_fraction(x))
 
+
+def l1_loss(tensor, weight=1.0, scope=None):
+  """Define a L1Loss, useful for regularize, i.e. lasso.
+  Args:
+    tensor: tensor to regularize.
+    weight: scale the loss by this factor.
+    scope: Optional scope for op_scope.
+  Returns:
+    the L1 loss op.
+  """
+  with tf.op_scope([tensor], scope, 'L1Loss'):
+    weight = tf.convert_to_tensor(weight,
+                                  dtype=tensor.dtype.base_dtype,
+                                  name='loss_weight')
+    loss = tf.mul(weight, tf.reduce_sum(tf.abs(tensor)), name='value')
+    tf.add_to_collection(LOSSES_COLLECTION, loss)
+    return loss
+
+
+def l2_loss(tensor, weight=1.0, scope=None):
+  """Define a L2Loss, useful for regularize, i.e. weight decay.
+  Args:
+    tensor: tensor to regularize.
+    weight: an optional weight to modulate the loss.
+    scope: Optional scope for op_scope.
+  Returns:
+    the L2 loss op.
+  """
+  with tf.op_scope([tensor], scope, 'L2Loss'):
+    weight = tf.convert_to_tensor(weight,
+                                  dtype=tensor.dtype.base_dtype,
+                                  name='loss_weight')
+    loss = tf.mul(weight, tf.nn.l2_loss(tensor), name='value')
+    tf.add_to_collection(LOSSES_COLLECTION, loss)
+    return loss
+
 def weight_variable(shape, name=None):
     """Create a weight variable with appropriate initialization."""
     initial = tf.truncated_normal(shape, stddev=1e-4)
@@ -65,7 +103,10 @@ def conv2d(name, input, kernel_shape, padding='SAME'):
         bias = bias_variable([kernel_shape[-1]], name='bias')
         conv = tf.nn.conv2d(input, kernel, strides=[1,1,1,1], padding=padding)
         relu = tf.nn.relu(tf.nn.bias_add(conv, bias), name=scope.name)
+        l1 = l1_loss(relu)
+
         activation_summary(relu)
+
 
     return (relu, kernel)
 
@@ -120,6 +161,7 @@ def argmax_unpool(name, maxpool, argmax, batch_size, padding='SAME'):
         argflat = tf.reshape(argmax_, [-1])
         sparse_unpool = tf.sparse_to_dense(argflat, [flat_len * 4], maxflat, validate_indices=False)
         unpool = tf.reshape(sparse_unpool, unpool_shape)
+        activation_summary(unpool)
 
     return unpool
 
@@ -128,6 +170,7 @@ def upsample(name, input):
         shape = [s.value for s in input.get_shape()]
         upsample_shape = [2 * shape[1], 2 * shape[2]]
         ups = tf.image.resize_nearest_neighbor(input, size=upsample_shape)
+        activation_summary(ups)
 
     return ups
 
@@ -169,6 +212,17 @@ def mean_squared_err(name, x, x_):
         tf.scalar_summary('mean square error', meansq)
 
     return meansq
+
+def zeiler_loss(name, x, x_, reconstruction_weight, sparsity_weight):
+    with tf.variable_scope(name) as scope:
+        feature_l1 = tf.pack(tf.get_collection(LOSSES_COLLECTION))
+        sparsity_loss = tf.mul(sparsity_weight, tf.reduce_sum(feature_l1))
+        reconstruction_loss = l2_loss(x - x_, reconstruction_weight)
+
+        loss = tf.add(sparsity_loss, reconstruction_loss, name=scope.name)
+        tf.scalar_summary(scope.name, loss)
+    return loss
+
 
 def accuracy(name, y_target, y_pred):
     with tf.variable_scope(name) as scope:
@@ -232,11 +286,11 @@ if __name__=='__main__':
     elif FLAGS.model_type == 'cae':
         shape0 = [s.value for s in x_image.get_shape()]
         shape0 = [FLAGS.batch_size] + shape0[1:]
-        conv, kernel0 = conv2d('conv1', x_image, [5,5,FLAGS.num_channels,3])
+        conv, kernel0 = conv2d('conv1', x_image, [3,3,FLAGS.num_channels,32])
         pool = max_pool('max_pool1', conv)
         shape1 = [s.value for s in pool.get_shape()]
         shape1 = [FLAGS.batch_size] + shape1[1:]
-        conv, kernel1 = conv2d('conv2', pool, [5,5,3,3])
+        conv, kernel1 = conv2d('conv2', pool, [5,5,32,64])
         pool = max_pool('max_pool2', conv)
         unpool = upsample('upsample1', pool)
         convT = deconv2d('deconv1', unpool, kernel1, shape1)
@@ -251,11 +305,11 @@ if __name__=='__main__':
         # convolutional and max pooling layers
         shape0 = [s.value for s in x_image.get_shape()]
         shape0 = [FLAGS.batch_size] + shape0[1:]
-        conv, kernel0 = conv2d('conv1', x_image, [3,3,FLAGS.num_channels,3])
+        conv, kernel0 = conv2d('conv1', x_image, [3,3,FLAGS.num_channels,32])
         pool, argmax0 = max_pool_argmax('max_pool1', conv)
         shape1 = [s.value for s in pool.get_shape()]
         shape1 = [FLAGS.batch_size] + shape1[1:]
-        conv, kernel1 = conv2d('conv2', pool, [3,3,3,3])
+        conv, kernel1 = conv2d('conv2', pool, [5,5,32,64])
         pool, argmax1 = max_pool_argmax('max_pool2', conv)
         unpool = argmax_unpool('unpool1', pool, argmax1, FLAGS.batch_size)
         convT = deconv2d('deconv1', unpool, kernel1, shape1)
@@ -264,7 +318,8 @@ if __name__=='__main__':
 
         tf.image_summary('reconstruction', convT, max_images=5)
 
-        loss = mean_squared_err('loss', x_image, convT)
+        #loss = mean_squared_err('loss', x_image, convT)
+        loss = zeiler_loss('zeiler_loss', x_image, convT, reconstruction_weight=1.0, sparsity_weight=.1)
     else:
         raise ValueError, "Invalid model topology, options are \'cae\',\'cnn\'"
 
