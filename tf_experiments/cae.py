@@ -21,7 +21,7 @@ def _MaxPoolWithArgmaxGrad(op, grad, arg):
 def get_flags(args):
     flags = tf.app.flags
     FLAGS = flags.FLAGS
-    flags.DEFINE_string('model_type', 'cae', 'Model topology spec, either cnn or cae')
+    flags.DEFINE_string('model_type', 'cae', 'Model topology spec, either cnn, scae or cae')
     flags.DEFINE_integer('batch_size', 100, 'Number of examples per batch')
     flags.DEFINE_integer('image_size', 28, 'Size of n x n images, should be 28 for MNIST')
     flags.DEFINE_integer('num_classes', 10, 'Number of labels or classes, should be 10 for MNIST')
@@ -97,44 +97,37 @@ def max_pool_argmax(name, input, padding='SAME'):
                                                      name=scope.name)
     return (maxpool, argmax)
 
-def argmax_unpool(name, maxpool, argmax, batch_size, padding='SAME'):
+def argmax_unpool(name, maxpool, argmax,batch_size, padding='SAME'):
     with tf.variable_scope(name) as scope:
         max_shape = [s.value for s in maxpool.get_shape()]
+        flat_len = max_shape[1] * max_shape[2] * max_shape[3]
+        unpool_shape = [1, 2 * max_shape[1], 2 * max_shape[2], max_shape[3]]
 
-        flat_n = max_shape[1] * max_shape[2] * max_shape[3]
-        maxflat = tf.reshape(maxpool, [batch_size * flat_n])
-        argflat = tf.reshape(argmax, [batch_size * flat_n])
+        max_unpack = tf.unpack(maxpool)
+        arg_unpack = tf.unpack(argmax)
 
-        dense = tf.sparse_to_dense(argflat, [batch_size * flat_n * 4], maxflat, validate_indices=False)
-        unpool_shape = [batch_size, 2 * max_shape[1], 2 * max_shape[2], max_shape[3]]
-        unpool = tf.reshape(dense, unpool_shape)
+        unpool_list = []
+        for m, a in zip(max_unpack, arg_unpack):
+            maxflat = tf.reshape(m, [-1])
+            argflat = tf.reshape(a, [-1])
 
+            dense = tf.sparse_to_dense(argflat, [flat_len * 4], maxflat, validate_indices=False)
+            up = tf.reshape(dense, unpool_shape)
+            unpool_list.append(up)
+
+        unpool_shape = [max_shape[0], 2*max_shape[1], 2*max_shape[2], max_shape[3]]
+        unpool = tf.reshape(tf.pack(unpool_list), unpool_shape)
         tf.image_summary(scope.name, unpool, max_images=5)
 
     return unpool
-'''
 
-NEAREST NEIGHBOR UPSAMPLE
-max_shape = [s.value for s in maxpool.get_shape()]
-upsample_shape = [2 * max_shape[1], 2 * max_shape[2]]
-upsample = tf.image.resize_nearest_neighbor(maxpool, size=upsample_shape)
-mask = tf.cast(tf.ones_like(upsample), tf.bool)
-unpool = tf.select(mask, upsample, upsample)
+def upsample(name, input):
+    with tf.variable_scope(name) as scope:
+        shape = [s.value for s in input.get_shape()]
+        upsample_shape = [2 * shape[1], 2 * shape[2]]
+        ups = tf.image.resize_nearest_neighbor(input, size=upsample_shape)
 
-NO GRAD DEFINED FOR SCATTER_UPDATE
-max_shape = [s.value for s in maxpool.get_shape()]
-
-maxflat = tf.reshape(maxpool, [-1, max_shape[1] * max_shape[2] * max_shape[3]])
-argflat = flatten('argflat',argmax)
-
-# unpooled shape will be 4 * pooled (for 2x2)
-flat_shape = 4 * maxflat.get_shape()[1].value
-unpool = tf.Variable(tf.zeros([flat_shape,]))
-
-unpool = tf.scatter_update(unpool, argflat, maxflat)
-unpool_shape = [-1, 2 * max_shape[1], 2 * max_shape[2], max_shape[3]]
-return tf.reshape(unpool, unpool_shape)
-'''
+    return ups
 
 # fully input
 def flatten(name, input):
@@ -234,6 +227,24 @@ if __name__=='__main__':
         accuracy_op = accuracy('accuracy', y, y_)
 
     elif FLAGS.model_type == 'cae':
+        shape0 = [s.value for s in x_image.get_shape()]
+        shape0 = [FLAGS.batch_size] + shape0[1:]
+        conv, kernel0 = conv2d('conv1', x_image, [5,5,FLAGS.num_channels,3])
+        pool = max_pool('max_pool1', conv)
+        shape1 = [s.value for s in pool.get_shape()]
+        shape1 = [FLAGS.batch_size] + shape1[1:]
+        conv, kernel1 = conv2d('conv2', pool, [5,5,3,3])
+        pool = max_pool('max_pool2', conv)
+        unpool = upsample('upsample1', pool)
+        convT = deconv2d('deconv1', unpool, kernel1, shape1)
+        unpool = upsample('upsample', convT)
+        convT = deconv2d('deconv2', unpool, kernel0, shape0)
+
+        tf.image_summary('reconstruction', convT, max_images=5)
+
+        loss = mean_squared_err('loss', x_image, convT)
+
+    elif FLAGS.model_type == 'scae':
         # convolutional and max pooling layers
         shape0 = [s.value for s in x_image.get_shape()]
         shape0 = [FLAGS.batch_size] + shape0[1:]
