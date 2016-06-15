@@ -87,10 +87,11 @@ def l2_loss(tensor, weight=1.0, scope=None):
     tf.add_to_collection(L2M_COLLECTION, loss)
     return loss
 
-def weight_variable(shape, name=None, stddev=.01):
+def weight_variable(shape, name=None):
     """Create a weight variable with appropriate initialization."""
-    initial = tf.truncated_normal(shape, stddev=stddev)
-    return tf.Variable(initial,name=name)
+    initial = tf.truncated_normal(shape, stddev=1e-4)
+    #initial = tf.contrib.layers.xavier_initializer_conv2d(dtype=tf.float32)
+    return tf.Variable(initial, name=name, dtype=tf.float32)
 
 def bias_variable(shape, name=None):
     """Create a bias variable with appropriate initialization."""
@@ -98,9 +99,9 @@ def bias_variable(shape, name=None):
     return tf.Variable(initial, name=name)
 
 # helper function for initializing conv layers
-def conv2d(name, input, kernel_shape, padding='SAME', filter_stddev=.01):
+def conv2d(name, input, kernel_shape, padding='SAME'):
     with tf.variable_scope(name) as scope:
-        kernel = weight_variable(kernel_shape, name='weights', stddev=filter_stddev)
+        kernel = weight_variable(kernel_shape, name='weights')
         bias = bias_variable([kernel_shape[-1]], name='bias')
         conv = tf.nn.conv2d(input, kernel, strides=[1,1,1,1], padding=padding)
         relu = tf.nn.relu(tf.nn.bias_add(conv, bias), name=scope.name)
@@ -312,10 +313,13 @@ if __name__=='__main__':
         loss = mean_squared_err('loss', x_image, convT)
 
     elif FLAGS.model_type == 'swwae':
-        conv, kernel0 = conv2d('conv0', x_image, [5,5,FLAGS.num_channels,16], filter_stddev=1e-4)
-        pool, argmax0 = max_pool_argmax('pool0', conv)
+        conv0 = tf.contrib.layers.convolution2d(x_image, 16, [5,5], normalizer_fn='batch_norm')
+        activation_summary(conv0)
+        conv1 = tf.contrib.layers.convolution2d(conv0, 32, [3,3], normalizer_fn='batch_norm')
+        activation_summary(conv1)
+        pool, argmax0 = max_pool_argmax('pool0', conv1)
         unpool = argmax_unpool('unpool0', pool, argmax0, FLAGS.batch_size)
-        deconv, deconv_kernel = conv2d('deconv1', unpool, [5,5,16,1], filter_stddev=.1)
+        deconv = tf.contrib.layers.convolution2d(x_image, 1, [5,5])
 
         tf.image_summary('reconstruction', deconv, max_images=5)
 
