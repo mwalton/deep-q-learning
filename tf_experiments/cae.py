@@ -8,7 +8,7 @@ logging.basicConfig(level=logging.INFO)
 from tensorflow.python.framework import ops
 from tensorflow.python.ops import gen_nn_ops
 @ops.RegisterGradient("MaxPoolWithArgmax")
-def _MaxPoolWithArgmaxGrad(op, grad, arg):
+def _MaxPoolWithArgmaxGrad(op, grad, unused_argmax):
   return gen_nn_ops._max_pool_grad(op.inputs[0],
                                    op.outputs[0],
                                    grad,
@@ -97,27 +97,29 @@ def max_pool_argmax(name, input, padding='SAME'):
                                                      name=scope.name)
     return (maxpool, argmax)
 
-def argmax_unpool(name, maxpool, argmax,batch_size, padding='SAME'):
+def argmax_unpool(name, maxpool, argmax, batch_size, padding='SAME'):
     with tf.variable_scope(name) as scope:
         max_shape = [s.value for s in maxpool.get_shape()]
-        flat_len = max_shape[1] * max_shape[2] * max_shape[3]
-        unpool_shape = [1, 2 * max_shape[1], 2 * max_shape[2], max_shape[3]]
+        flat_len = batch_size * max_shape[1] * max_shape[2] * max_shape[3]
+        unpool_shape = [-1, 2*max_shape[1], 2*max_shape[2], max_shape[3]]
 
-        max_unpack = tf.unpack(maxpool)
-        arg_unpack = tf.unpack(argmax)
+        '''Need to correct 1D index to include batch offset. This
+           is apparently a bug in tensorflow max_pool_with_argmax which
+           should compute flattend index as ((b * height + y) * width + x) * channels + c
+           according to https://www.tensorflow.org/versions/r0.8/api_docs/python/nn.html#max_pool_with_argmax
+           bug tracked here: https://github.com/tensorflow/tensorflow/issues/2821'''
+        # base offset for first dimension
+        base = tf.cast(unpool_shape[1] * unpool_shape[2] * unpool_shape[3], tf.int64)
+        # range index over each batch [1 ... B]
+        b = tf.cast(tf.range(0, batch_size), tf.int64)
+        batch_offset = tf.mul(base, tf.reshape(b, [-1,1,1,1]))
+        argmax_ = tf.add(batch_offset, argmax)
 
-        unpool_list = []
-        for m, a in zip(max_unpack, arg_unpack):
-            maxflat = tf.reshape(m, [-1])
-            argflat = tf.reshape(a, [-1])
-
-            dense = tf.sparse_to_dense(argflat, [flat_len * 4], maxflat, validate_indices=False)
-            up = tf.reshape(dense, unpool_shape)
-            unpool_list.append(up)
-
-        unpool_shape = [max_shape[0], 2*max_shape[1], 2*max_shape[2], max_shape[3]]
-        unpool = tf.reshape(tf.pack(unpool_list), unpool_shape)
-        tf.image_summary(scope.name, unpool, max_images=5)
+        # flatten and initialize sparse tensor
+        maxflat = tf.reshape(maxpool, [-1])
+        argflat = tf.reshape(argmax_, [-1])
+        sparse_unpool = tf.sparse_to_dense(argflat, [flat_len * 4], maxflat, validate_indices=False)
+        unpool = tf.reshape(sparse_unpool, unpool_shape)
 
     return unpool
 
@@ -187,7 +189,7 @@ def feed_dict(x, y, data, batch_size, train):
         images, labels = data.train.next_batch(batch_size)
     else:
         images, labels = data.test.next_batch(batch_size)
-    return {x: images, y: labels}
+    return {x: images, y: labels, B: batch_size}
 
 
 if __name__=='__main__':
@@ -206,6 +208,7 @@ if __name__=='__main__':
     # initializes the input and output nodes of the graph
     x = tf.placeholder(dtype=tf.float32, shape=x_shape)
     y = tf.placeholder(dtype=tf.float32, shape=y_shape)
+    B = tf.placeholder(tf.int32)
 
     # reshape the input into images
     x_image = tf.reshape(x, [-1,FLAGS.image_size, FLAGS.image_size, FLAGS.num_channels])
@@ -248,11 +251,11 @@ if __name__=='__main__':
         # convolutional and max pooling layers
         shape0 = [s.value for s in x_image.get_shape()]
         shape0 = [FLAGS.batch_size] + shape0[1:]
-        conv, kernel0 = conv2d('conv1', x_image, [5,5,FLAGS.num_channels,3])
+        conv, kernel0 = conv2d('conv1', x_image, [3,3,FLAGS.num_channels,3])
         pool, argmax0 = max_pool_argmax('max_pool1', conv)
         shape1 = [s.value for s in pool.get_shape()]
         shape1 = [FLAGS.batch_size] + shape1[1:]
-        conv, kernel1 = conv2d('conv2', pool, [5,5,3,3])
+        conv, kernel1 = conv2d('conv2', pool, [3,3,3,3])
         pool, argmax1 = max_pool_argmax('max_pool2', conv)
         unpool = argmax_unpool('unpool1', pool, argmax1, FLAGS.batch_size)
         convT = deconv2d('deconv1', unpool, kernel1, shape1)
@@ -310,6 +313,12 @@ if __name__=='__main__':
                     saver.save(sess, checkpoint_path, global_step=step)
 
         if FLAGS.test:
+            test_writer = tf.train.SummaryWriter(FLAGS.logdir + '/test')
+            sess.run(init_op)
+            feed = feed_dict(x,y,mnist,FLAGS.eval_batch_size, train=False)
+            summary = sess.run(summary_op, feed_dict=feed)
+            test_writer.add_summary(summary, global_step=0)
+            '''
             if FLAGS.model_type == 'cnn':
                 acc = sess.run(accuracy_op, feed_dict={x: mnist.test.images, y: mnist.test.labels})
                 logging.info('Evaluating model accuracy on %d test examples' % mnist.test.images.shape[0])
@@ -320,7 +329,7 @@ if __name__=='__main__':
                 print("MSE: %1.4f" % mse)
             else:
                 raise ValueError, 'Invalid model type'
-
+            '''
 
 
 
