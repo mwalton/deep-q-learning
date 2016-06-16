@@ -3,7 +3,6 @@ import tensorflow as tf
 
 L2M_COLLECTION = '_l2m'
 
-''
 from tensorflow.python.framework import ops
 from tensorflow.python.ops import gen_nn_ops
 @ops.RegisterGradient("MaxPoolGrad")
@@ -35,6 +34,14 @@ def get_shape_with_batch(x, dim_ordering='th'):
         output_shape = tf.pack([batch_shape, shape[1], shape[2], shape[3]])
 
     return output_shape
+
+
+def set_shape(x, shape):
+    '''This method can be called multiple times, and will merge the given shape with the current
+    shape of this tensor. It can be used to provide additional information about the shape of this tensor
+    that cannot be inferred from the graph alone.
+    '''
+    x.set_shape(shape)
 
 
 def conv2d_transpose(x, kernel, output_shape, subsample, border_mode, dim_ordering='th'):

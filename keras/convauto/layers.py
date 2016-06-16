@@ -57,14 +57,13 @@ class ConvolutionalTranspose2D(Convolution2D):
     def __init__(self, conv_layer, *args, **kwargs):
         self._conv_layer = conv_layer
 
-        kwargs['nb_filter'] = self._conv_layer.input_shape[1]
-        #kwargs['nb_filter'] = self._conv_layer.nb_filter
+        kwargs['nb_filter'] = self._conv_layer.input_shape[1]#self._conv_layer.nb_filter
         kwargs['nb_row'] = self._conv_layer.nb_row
         kwargs['nb_col'] = self._conv_layer.nb_col
         kwargs['border_mode'] = self._conv_layer.border_mode
+        kwargs['subsample'] = self._conv_layer.subsample
         super(ConvolutionalTranspose2D, self).__init__(*args, **kwargs)
 
-        #self.nb_out_channels = self._conv_layer.input_shape[1]
         if self.dim_ordering == 'th':
             self.nb_out_channels = self._conv_layer.input_shape[1]
         elif self.dim_ordering == 'tf':
@@ -73,34 +72,35 @@ class ConvolutionalTranspose2D(Convolution2D):
             raise Exception('Invalid dim_ordering: ' + self.dim_ordering)
 
     def call(self, x, mask=None):
-        subsample = self._conv_layer.subsample
         output_shape = convauto_backend.get_shape_with_batch(self._conv_layer.input)
-        border_mode = self._conv_layer.border_mode
 
         output = convauto_backend.conv2d_transpose(x, self.W, output_shape,
-                                                   subsample, border_mode,
+                                                   self.subsample, self.border_mode,
                                                    dim_ordering=self.dim_ordering)
 
         if self.bias:
             if self.dim_ordering == 'th':
-                output += K.reshape(self.b, (1, self.nb_filter, 1, 1))
+                output += K.reshape(self.b, (1, self.nb_out_channels, 1, 1))
             elif self.dim_ordering == 'tf':
-                output += K.reshape(self.b, (1, 1, 1, self.nb_filter))
+                output += K.reshape(self.b, (1, 1, 1, self.nb_out_channels))
             else:
                 raise Exception('Invalid dim_ordering: ' + self.dim_ordering)
         output = self.activation(output)
+
         return output
+
+    def set_output_shape(self):
+        convauto_backend.set_shape(self.output, self.output_shape)
 
     def build(self,input_shape):
         self.W = self._conv_layer.W
-        '''
         if self.dim_ordering == 'th':
             self.W_shape = (self.nb_out_channels, self.nb_filter, self.nb_row, self.nb_col)
         elif self.dim_ordering == 'tf':
-            raise NotImplementedError()
+            self.W_shape = (self.nb_row, self.nb_col, self.nb_out_channels, self.nb_filter)
         else:
             raise Exception('Invalid dim_ordering: ' + self.dim_ordering)
-        '''
+
         self.b = K.zeros((self.nb_out_channels,))
         self.params = [self.b]
         self.regularizers = []
@@ -121,6 +121,8 @@ class ConvolutionalTranspose2D(Convolution2D):
             self.set_weights(self.initial_weights)
             del self.initial_weights
 
+
+
     @property
     def output_shape(self):
         output_shape = list(super(ConvolutionalTranspose2D, self).output_shape)
@@ -133,3 +135,20 @@ class ConvolutionalTranspose2D(Convolution2D):
             raise Exception('Invalid dim_ordering: ' + self.dim_ordering)
         return tuple(output_shape)
 
+    def get_config(self):
+        config = {'name': self.__class__.__name__,
+                  'nb_filter': self.nb_filter,
+                  'nb_row': self.nb_row,
+                  'nb_col': self.nb_col,
+                  'init': self.init.__name__,
+                  'activation': self.activation.__name__,
+                  'border_mode': self.border_mode,
+                  'subsample': self.subsample,
+                  'dim_ordering': self.dim_ordering,
+                  'W_regularizer': self.W_regularizer.get_config() if self.W_regularizer else None,
+                  'b_regularizer': self.b_regularizer.get_config() if self.b_regularizer else None,
+                  'activity_regularizer': self.activity_regularizer.get_config() if self.activity_regularizer else None,
+                  'W_constraint': self.W_constraint.get_config() if self.W_constraint else None,
+                  'b_constraint': self.b_constraint.get_config() if self.b_constraint else None}
+        base_config = super(ConvolutionalTranspose2D, self).get_config()
+        return dict(list(base_config.items()) + list(config.items()))
